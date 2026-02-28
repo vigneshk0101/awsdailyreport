@@ -78,11 +78,26 @@ jobs:
             --granularity MONTHLY \
             --output json >> report.txt
 
-            # Send Email
+                # Convert report to single-line safe string
+              EMAIL_BODY=$(sed ':a;N;$!ba;s/\n/\\n/g' report.txt)
+              
+              # Create message.json file
+              cat > message.json <<EOF
+              {
+                "Subject": {
+                  "Data": "Daily Cloud Monitor Report"
+                },
+                "Body": {
+                  "Text": {
+                    "Data": "$EMAIL_BODY"
+                  }
+                }
+              }
+              EOF
+              
+              # Send email
               aws ses send-email \
                 --from "${{ secrets.SES_SENDER_EMAIL }}" \
                 --destination "ToAddresses=${{ secrets.SES_RECEIVER_EMAIL }}" \
-                --message "Subject={Data=Daily Cloud Monitor Report},Body={Text={Data=$(cat report.txt)}}" \
+                --message file://message.json \
                 --region us-east-1
-
-            
