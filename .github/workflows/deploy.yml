@@ -81,7 +81,7 @@ jobs:
             # Send Email
               aws ses send-email \
                 --from "${{ secrets.SES_SENDER_EMAIL }}" \
-                --destination "ToAddresses=${{ secrets.SES_RECIVER_EMAIL }}" \
+                --destination "ToAddresses=${{ secrets.SES_RECEIVER_EMAIL }}" \
                 --message "Subject={Data=Daily Cloud Monitor Report},Body={Text={Data=$(cat report.txt)}}" \
                 --region us-east-1
 
