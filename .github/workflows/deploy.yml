@@ -2,57 +2,64 @@ name: Daily Cloud Monitor
 
 on:
   schedule:
-    - cron: "30 1 * * *"   # Runs every day at 7 AM IST (01:30 UTC)
-  workflow_dispatch:        # Allows manual run
+    - cron: "30 1 * * *"   # Runs daily at 07:00 IST (01:30 UTC)
+  workflow_dispatch:        # Allow manual trigger
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
 
     steps:
-      # Sets AWS credentials for the CLI
+      # 1) Configure AWS credentials for the runner (uses repo secrets)
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1   # Default region for global services
+          aws-region: us-east-1   # Default region for global services (CE/S3)
 
-      # Collect cloud data from ALL AWS regions + global services
-      - name: Generate Cloud Report
+      # 2) Generate a simple text report by querying AWS across ALL regions
+      - name: Generate Cloud Report (Global)
         shell: bash
         run: |
-          # Start clean report file
+          set -euo pipefail
+
+          # Start a fresh report file
           echo "===== DAILY CLOUD STATUS REPORT =====" > report.txt
+          echo "Generated (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> report.txt
           echo "" >> report.txt
 
-          # Get all AWS regions
+          # Get all enabled AWS regions (requires ec2:DescribeRegions)
           REGIONS=$(aws ec2 describe-regions --query "Regions[].RegionName" --output text)
 
-          # Loop through all regions and collect EC2, VPC, EIP, ECR details
+          # Loop each region and collect basic info
           for REGION in $REGIONS; do
             echo "=== Region: $REGION ===" >> report.txt
 
             echo "Running EC2 Instances:" >> report.txt
-            aws ec2 describe-instances --region $REGION \
-              --query "Reservations[].Instances[].InstanceId" --output text >> report.txt
+            aws ec2 describe-instances --region "$REGION" \
+              --filters Name=instance-state-name,Values=running \
+              --query "Reservations[].Instances[].InstanceId" \
+              --output text >> report.txt
             echo "" >> report.txt
 
             echo "VPCs:" >> report.txt
-            aws ec2 describe-vpcs --region $REGION \
-              --query "Vpcs[].VpcId" --output text >> report.txt
+            aws ec2 describe-vpcs --region "$REGION" \
+              --query "Vpcs[].VpcId" \
+              --output text >> report.txt
             echo "" >> report.txt
 
             echo "Elastic IPs:" >> report.txt
-            aws ec2 describe-addresses --region $REGION \
-              --query "Addresses[].PublicIp" --output text >> report.txt
+            aws ec2 describe-addresses --region "$REGION" \
+              --query "Addresses[].PublicIp" \
+              --output text >> report.txt
             echo "" >> report.txt
 
             echo "ECR Repositories:" >> report.txt
-            aws ecr describe-repositories --region $REGION \
-              --query "repositories[].repositoryName" --output text >> report.txt
+            aws ecr describe-repositories --region "$REGION" \
+              --query "repositories[].repositoryName" \
+              --output text >> report.txt
             echo "" >> report.txt
-
           done
 
           # S3 is global (not region-specific)
@@ -60,24 +67,21 @@ jobs:
           aws s3 ls >> report.txt
           echo "" >> report.txt
 
-          # Cost Explorer (Monthly cost)
-          echo "=== Monthly Cost So Far ===" >> report.txt
+          # Month-to-date cost (Cost Explorer)
+          echo "=== Monthly Cost So Far (JSON) ===" >> report.txt
           aws ce get-cost-and-usage \
             --time-period Start=$(date +%Y-%m-01),End=$(date +%Y-%m-%d) \
             --granularity MONTHLY \
-            --metrics UnblendedCost >> report.txt
+            --metrics UnblendedCost \
+            --output json >> report.txt
           echo "" >> report.txt
 
-          # Cost forecast next 30 days
-          echo "=== Forecasted Cost (Next 30 Days) ===" >> report.txt
+          # 30-day forecast (portable date handling: GNU date on Ubuntu works)
+          echo "=== Forecasted Cost (Next 30 Days, JSON) ===" >> report.txt
           aws ce get-cost-forecast \
             --time-period Start=$(date +%Y-%m-%d),End=$(date -d "+30 days" +%Y-%m-%d) \
             --metric UNBLENDED_COST \
-            --granularity MONTHLY >> report.txt
+            --granularity MONTHLY \
+            --output json >> report.txt
 
-      # Upload the report so it's downloadable from GitHub UI
-      - name: Upload report.txt
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloud-monitor-report
-          path: report.txt
+  
