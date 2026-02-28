@@ -17,9 +17,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Generate Cloud Report (Global)
+      - name: Generate Cloud Report and Send Email
         shell: bash
         run: |
+          # Create report
           echo "===== DAILY CLOUD STATUS REPORT =====" > report.txt
           echo "Generated (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> report.txt
           echo "" >> report.txt
@@ -74,33 +75,31 @@ jobs:
             --granularity MONTHLY \
             --output json >> report.txt
 
-          BOUNDARY="NextPart"
+          # Build raw email file (no here-doc, no JSON issues)
 
-                      RAW_MESSAGE=$(cat <<EOF
-            From: ${{ secrets.SES_SENDER_EMAIL }}
-            To: ${{ secrets.SES_RECEIVER_EMAIL }}
-            Subject: Daily Cloud Monitor Report
-            MIME-Version: 1.0
-            Content-Type: multipart/mixed; boundary="$BOUNDARY"
-            
-            --$BOUNDARY
-            Content-Type: text/plain; charset="UTF-8"
-            
-            Please find the daily cloud monitor report attached.
-            
-            --$BOUNDARY
-            Content-Type: text/plain; charset="UTF-8"; name="report.txt"
-            Content-Disposition: attachment; filename="report.txt"
-            Content-Transfer-Encoding: base64
-            
-            $(base64 report.txt)
-            
-            --$BOUNDARY--
-            EOF
-            )
+          echo "From: ${{ secrets.SES_SENDER_EMAIL }}" > raw_email.txt
+          echo "To: ${{ secrets.SES_RECEIVER_EMAIL }}" >> raw_email.txt
+          echo "Subject: Daily Cloud Monitor Report" >> raw_email.txt
+          echo "MIME-Version: 1.0" >> raw_email.txt
+          echo "Content-Type: multipart/mixed; boundary=NextPart" >> raw_email.txt
+          echo "" >> raw_email.txt
 
-          echo "$RAW_MESSAGE" > raw_email.txt
+          echo "--NextPart" >> raw_email.txt
+          echo "Content-Type: text/plain; charset=UTF-8" >> raw_email.txt
+          echo "" >> raw_email.txt
+          echo "Please find the daily cloud monitor report attached." >> raw_email.txt
+          echo "" >> raw_email.txt
 
+          echo "--NextPart" >> raw_email.txt
+          echo "Content-Type: text/plain; name=report.txt" >> raw_email.txt
+          echo "Content-Disposition: attachment; filename=report.txt" >> raw_email.txt
+          echo "Content-Transfer-Encoding: base64" >> raw_email.txt
+          echo "" >> raw_email.txt
+          base64 report.txt >> raw_email.txt
+          echo "" >> raw_email.txt
+          echo "--NextPart--" >> raw_email.txt
+
+          # Send email
           aws ses send-raw-email \
             --raw-message Data="$(base64 raw_email.txt)" \
             --region us-east-1
