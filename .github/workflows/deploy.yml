@@ -20,7 +20,6 @@ jobs:
       - name: Generate Cloud Report (Global)
         shell: bash
         run: |
-          # Start report file
           echo "===== DAILY CLOUD STATUS REPORT =====" > report.txt
           echo "Generated (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> report.txt
           echo "" >> report.txt
@@ -75,24 +74,33 @@ jobs:
             --granularity MONTHLY \
             --output json >> report.txt
 
-          # Convert report to single-line JSON-safe string
-          EMAIL_BODY=$(sed ':a;N;$!ba;s/\n/\\n/g' report.txt)
+          BOUNDARY="NextPart"
 
-          # Create message.json safely
-                    printf '{
-            "Subject": {
-              "Data": "Daily Cloud Monitor Report"
-            },
-            "Body": {
-              "Text": {
-                "Data": "%s"
-              }
-            }
-          }' "$EMAIL_BODY" > message.json
-          
-                    # Send email
-                    aws ses send-email \
-                      --from "${{ secrets.SES_SENDER_EMAIL }}" \
-                      --destination "ToAddresses=${{ secrets.SES_RECEIVER_EMAIL }}" \
-                      --message file://message.json \
-                      --region us-east-1
+                      RAW_MESSAGE=$(cat <<EOF
+            From: ${{ secrets.SES_SENDER_EMAIL }}
+            To: ${{ secrets.SES_RECEIVER_EMAIL }}
+            Subject: Daily Cloud Monitor Report
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="$BOUNDARY"
+            
+            --$BOUNDARY
+            Content-Type: text/plain; charset="UTF-8"
+            
+            Please find the daily cloud monitor report attached.
+            
+            --$BOUNDARY
+            Content-Type: text/plain; charset="UTF-8"; name="report.txt"
+            Content-Disposition: attachment; filename="report.txt"
+            Content-Transfer-Encoding: base64
+            
+            $(base64 report.txt)
+            
+            --$BOUNDARY--
+            EOF
+            )
+
+          echo "$RAW_MESSAGE" > raw_email.txt
+
+          aws ses send-raw-email \
+            --raw-message Data="$(base64 raw_email.txt)" \
+            --region us-east-1
