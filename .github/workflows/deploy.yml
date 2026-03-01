@@ -60,20 +60,42 @@ jobs:
           aws s3 ls >> report.txt
           echo "" >> report.txt
 
-          echo "=== Monthly Cost So Far (JSON) ===" >> report.txt
-          aws ce get-cost-and-usage \
-            --time-period Start=$(date +%Y-%m-01),End=$(date +%Y-%m-%d) \
-            --granularity MONTHLY \
-            --metrics UnblendedCost \
-            --output json >> report.txt
-          echo "" >> report.txt
-
-          echo "=== Forecasted Cost (Next 30 Days, JSON) ===" >> report.txt
-          aws ce get-cost-forecast \
-            --time-period Start=$(date +%Y-%m-%d),End=$(date -d "+30 days" +%Y-%m-%d) \
-            --metric UNBLENDED_COST \
-            --granularity MONTHLY \
-            --output json >> report.txt
+                    # =============================
+            # AWS Cost Explorer Section
+            # =============================
+            
+            echo "=============================" >> report.txt
+            echo "AWS Cost Explorer Report" >> report.txt
+            echo "=============================" >> report.txt
+            
+            # Dynamic UTC-safe dates (permanent fix)
+            START_DATE=$(date -u +%Y-%m-01)
+            END_DATE=$(date -u -d "tomorrow" +%Y-%m-%d)
+            
+            echo "Cost Report From $START_DATE To $END_DATE" >> report.txt
+            echo "" >> report.txt
+            
+            echo "Month-to-Date Cost:" >> report.txt
+            aws ce get-cost-and-usage \
+              --time-period Start=$START_DATE,End=$END_DATE \
+              --granularity MONTHLY \
+              --metrics "UnblendedCost" \
+              --query 'ResultsByTime[].Total.UnblendedCost.Amount' \
+              --output text >> report.txt
+            
+            echo "" >> report.txt
+            echo "Forecast for Next 30 Days:" >> report.txt
+            
+            FORECAST_END=$(date -u -d "+30 days" +%Y-%m-%d)
+            
+            aws ce get-cost-forecast \
+              --time-period Start=$END_DATE,End=$FORECAST_END \
+              --metric UNBLENDED_COST \
+              --granularity MONTHLY \
+              --query 'Total.Amount' \
+              --output text >> report.txt
+            
+            echo "" >> report.txt
 
           # Build raw email file (no here-doc, no JSON issues)
 
