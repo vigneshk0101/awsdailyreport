@@ -2,7 +2,7 @@ name: Daily Cloud Monitor
 
 on:
   schedule:
-    - cron: "35 3 * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
