@@ -32,7 +32,7 @@ jobs:
 
             echo "Running EC2 Instances:" >> report.txt
             aws ec2 describe-instances --region "$REGION" \
-              --filters Name=instance-state-name,Values=running \
+              --filters Name=instance-state-name,Values=running,stopped \
               --query "Reservations[].Instances[].InstanceId" \
               --output text >> report.txt
             echo "" >> report.txt
